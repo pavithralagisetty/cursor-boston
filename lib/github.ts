@@ -96,9 +96,11 @@ export async function processPullRequest(
       prData.repository.name
     )
   ) {
-    logger.debug("Skipping PR from different repository", {
+    logger.warn("Skipping PR from different repository", {
       owner: prData.repository.owner.login,
       repo: prData.repository.name,
+      expectedOwner: REPOSITORY_OWNER,
+      expectedRepo: REPOSITORY_NAME,
     });
     return;
   }
@@ -108,12 +110,21 @@ export async function processPullRequest(
 
   // Only process PRs from users with connected GitHub accounts
   if (!userId) {
-    logger.debug("Skipping PR from user without connected GitHub account", {
+    logger.warn("Skipping PR from user without connected GitHub account", {
       prNumber: prData.number,
       authorLogin,
+      hint: "User needs to connect GitHub on their profile",
     });
     return;
   }
+
+  logger.info("Processing PR for user", {
+    prNumber: prData.number,
+    authorLogin,
+    userId,
+    state: prData.state,
+    merged: prData.merged,
+  });
 
   const prId = `pr-${prData.number}`;
   const prRef = db.collection("pullRequests").doc(prId);
