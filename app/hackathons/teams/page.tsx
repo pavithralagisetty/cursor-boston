@@ -196,7 +196,7 @@ function TeamsPageContent() {
     );
   }
 
-  const teamsWithSlots = teams.filter((t) => t.memberIds.length < 3);
+  const teamsWithSlots = teams.filter((t) => t.memberIds.length >= 2 && t.memberIds.length < 3);
   const fullTeams = teams.filter((t) => t.memberIds.length === 3);
 
   return (

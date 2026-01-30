@@ -204,7 +204,7 @@ function HackathonsPoolPageContent() {
       const allTeamsSnap = await getDocs(allTeamsQ);
       const withSlots = allTeamsSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as HackathonTeam))
-        .filter((t) => t.memberIds.length < 3);
+        .filter((t) => t.memberIds.length >= 2 && t.memberIds.length < 3);
       setTeamsWithSlots(withSlots);
 
       const allTeamMemberIds = [...new Set(withSlots.flatMap((t) => t.memberIds))].filter(
