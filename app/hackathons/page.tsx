@@ -91,6 +91,30 @@ export default function HackathonsPage() {
         </div>
       </section>
 
+      {/* Sponsor / host */}
+      <section className="py-12 px-6 border-b border-neutral-800">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold text-white mb-4">
+            Sponsor or host
+          </h2>
+          <p className="text-neutral-400 mb-4">
+            Interested in supporting our community? Get in touch to sponsor prizes for
+            the monthly virtual hackathon or to sponsor and host an in-person hackathon.
+          </p>
+          <p className="text-neutral-400">
+            Email{" "}
+            <a
+              href="mailto:hello@cursorboston.com"
+              className="text-emerald-400 hover:text-emerald-300 underline"
+            >
+              hello@cursorboston.com
+            </a>
+            {" "}to sponsor prizes for the monthly hackathon or to discuss sponsoring
+            and hosting an in-person hackathon.
+          </p>
+        </div>
+      </section>
+
       {/* Rules summary */}
       <section className="py-12 px-6">
         <div className="max-w-4xl mx-auto">
