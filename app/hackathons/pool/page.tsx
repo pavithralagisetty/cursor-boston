@@ -353,6 +353,7 @@ function HackathonsPoolPageContent() {
     if (!db || !user) return;
     if (myTeam && myTeam.memberIds.length >= 3) return;
     setInviting(toUserId);
+    setMyInvitedUserIds((prev) => new Set(prev).add(toUserId));
     try {
       let teamId = myTeam?.id;
       if (!teamId) {
@@ -364,6 +365,18 @@ function HackathonsPoolPageContent() {
           wins: 0,
         });
         teamId = teamRef.id;
+        setMyTeam((prev) =>
+          prev
+            ? prev
+            : {
+                id: teamId,
+                hackathonId,
+                memberIds: [user.uid],
+                createdBy: user.uid,
+                createdAt: new Date(),
+                wins: 0,
+              }
+        );
       }
       await addDoc(collection(db, "hackathonInvites"), {
         fromUserId: user.uid,
@@ -372,9 +385,13 @@ function HackathonsPoolPageContent() {
         status: "pending",
         createdAt: serverTimestamp(),
       });
-      await fetchData();
     } catch (e) {
       console.error(e);
+      setMyInvitedUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(toUserId);
+        return next;
+      });
       alert("Failed to send invite");
     } finally {
       setInviting(null);
@@ -384,6 +401,7 @@ function HackathonsPoolPageContent() {
   const handleRequestToJoin = async (teamId: string) => {
     if (!db || !user) return;
     setRequesting(teamId);
+    setMyPendingRequestTeamIds((prev) => new Set(prev).add(teamId));
     try {
       await addDoc(collection(db, "hackathonJoinRequests"), {
         fromUserId: user.uid,
@@ -391,9 +409,13 @@ function HackathonsPoolPageContent() {
         status: "pending",
         createdAt: serverTimestamp(),
       });
-      await fetchData();
     } catch (e) {
       console.error(e);
+      setMyPendingRequestTeamIds((prev) => {
+        const next = new Set(prev);
+        next.delete(teamId);
+        return next;
+      });
       alert("Failed to send request");
     } finally {
       setRequesting(null);

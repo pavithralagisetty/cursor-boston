@@ -172,6 +172,7 @@ function TeamsPageContent() {
   const handleRequestToJoin = async (teamId: string) => {
     if (!db || !user) return;
     setRequesting(teamId);
+    setMyPendingRequestTeamIds((prev) => new Set(prev).add(teamId));
     try {
       await addDoc(collection(db, "hackathonJoinRequests"), {
         fromUserId: user.uid,
@@ -179,9 +180,13 @@ function TeamsPageContent() {
         status: "pending",
         createdAt: serverTimestamp(),
       });
-      await fetchData();
     } catch (e) {
       console.error(e);
+      setMyPendingRequestTeamIds((prev) => {
+        const next = new Set(prev);
+        next.delete(teamId);
+        return next;
+      });
       alert("Failed to send request");
     } finally {
       setRequesting(null);
