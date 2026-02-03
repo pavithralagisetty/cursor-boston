@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { NextRequest } from "next/server";
 import { getAdminDb } from "./firebase-admin";
-import { Timestamp } from "firebase-admin/firestore";
+import { Timestamp, FieldValue } from "firebase-admin/firestore";
 
 // ============================================================================
 // Types
@@ -267,19 +267,37 @@ export async function claimAgent(
     throw new Error("Firebase Admin is not configured");
   }
 
-  const updateData: Partial<Agent> = {
+  const claimedAt = Timestamp.now();
+  
+  // Build update object - only include defined values (Firestore rejects undefined)
+  const updateData: Record<string, unknown> = {
+    status: "claimed",
+    ownerId,
+    claimedAt,
+    claimToken: FieldValue.delete(),
+    claimExpiresAt: FieldValue.delete(),
+  };
+  
+  // Only include optional fields if they have values
+  if (ownerEmail !== undefined) {
+    updateData.ownerEmail = ownerEmail;
+  }
+  if (ownerDisplayName !== undefined) {
+    updateData.ownerDisplayName = ownerDisplayName;
+  }
+
+  await adminDb.collection("agents").doc(agent.id).update(updateData);
+
+  return {
+    ...agent,
     status: "claimed",
     ownerId,
     ownerEmail,
     ownerDisplayName,
-    claimedAt: Timestamp.now(),
-    claimToken: undefined, // Remove claim token after successful claim
+    claimedAt,
+    claimToken: undefined,
     claimExpiresAt: undefined,
-  };
-
-  await adminDb.collection("agents").doc(agent.id).update(updateData);
-
-  return { ...agent, ...updateData } as Agent;
+  } as Agent;
 }
 
 /**
@@ -319,4 +337,26 @@ export function toPublicProfile(agent: Agent): AgentPublicProfile {
   }
 
   return profile;
+}
+
+/**
+ * Get all agents owned by a user.
+ */
+export async function getAgentsByOwner(ownerId: string): Promise<Agent[]> {
+  const adminDb = getAdminDb();
+  if (!adminDb) {
+    throw new Error("Firebase Admin is not configured");
+  }
+
+  const agentsRef = adminDb.collection("agents");
+  const snapshot = await agentsRef
+    .where("ownerId", "==", ownerId)
+    .where("status", "==", "claimed")
+    .orderBy("claimedAt", "desc")
+    .get();
+
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  })) as Agent[];
 }

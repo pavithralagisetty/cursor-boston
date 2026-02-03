@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAgentByClaimToken, claimAgent } from "@/lib/agents";
 import { getVerifiedUser } from "@/lib/server-auth";
+import { getAdminDb } from "@/lib/firebase-admin";
 
 interface RouteContext {
   params: Promise<{ token: string }>;
@@ -50,6 +51,34 @@ export async function GET(
       // User not logged in, that's okay for GET
     }
 
+    // Check profile requirements if user is logged in
+    let profileStatus = null;
+    if (user) {
+      const adminDb = getAdminDb();
+      if (adminDb) {
+        const userDoc = await adminDb.collection("users").doc(user.uid).get();
+        const userProfile = userDoc.exists ? userDoc.data() : null;
+        const displayName = userProfile?.displayName || user.name;
+        
+        profileStatus = {
+          hasDisplayName: Boolean(displayName && displayName.trim().length > 0),
+          isPublic: Boolean(userProfile?.visibility?.isPublic),
+          displayName: displayName || null,
+        };
+      }
+    }
+
+    const canClaim = user && profileStatus?.hasDisplayName && profileStatus?.isPublic;
+    
+    let message = "Please log in to claim this agent.";
+    if (user && !profileStatus?.hasDisplayName) {
+      message = "Please add a display name to your profile to claim this agent.";
+    } else if (user && !profileStatus?.isPublic) {
+      message = "Please set your profile to public to claim this agent.";
+    } else if (user && canClaim) {
+      message = `You are logged in as ${user.email}. Click confirm to claim this agent.`;
+    }
+
     return NextResponse.json({
       success: true,
       agent: {
@@ -64,13 +93,12 @@ export async function GET(
         ? {
             uid: user.uid,
             email: user.email,
-            displayName: user.name,
+            displayName: profileStatus?.displayName || user.name,
           }
         : null,
-      canClaim: !!user,
-      message: user
-        ? `You are logged in as ${user.email}. Click confirm to claim this agent.`
-        : "Please log in to claim this agent.",
+      profileStatus,
+      canClaim,
+      message,
     });
   } catch (error) {
     console.error("Error getting agent claim info:", error);
@@ -129,6 +157,50 @@ export async function POST(
           hint: "Please log in to claim this agent",
         },
         { status: 401 }
+      );
+    }
+
+    // Check profile requirements
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      throw new Error("Firebase Admin is not configured");
+    }
+
+    const userDoc = await adminDb.collection("users").doc(user.uid).get();
+    const userProfile = userDoc.exists ? userDoc.data() : null;
+
+    // Check if profile has a display name
+    const displayName = userProfile?.displayName || user.name;
+    if (!displayName || displayName.trim().length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Profile incomplete",
+          code: "PROFILE_INCOMPLETE",
+          hint: "Please add a display name to your profile before claiming an agent.",
+          action: {
+            type: "complete_profile",
+            url: "/profile",
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check if profile is public
+    if (!userProfile?.visibility?.isPublic) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Profile must be public",
+          code: "PROFILE_NOT_PUBLIC",
+          hint: "Please set your profile to public before claiming an agent. This helps build trust in the community.",
+          action: {
+            type: "make_public",
+            url: "/profile",
+          },
+        },
+        { status: 400 }
       );
     }
 

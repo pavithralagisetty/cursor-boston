@@ -14,6 +14,12 @@ interface AgentInfo {
   claimExpiresAt?: { _seconds: number };
 }
 
+interface ProfileStatus {
+  hasDisplayName: boolean;
+  isPublic: boolean;
+  displayName: string | null;
+}
+
 interface ClaimResponse {
   success: boolean;
   agent?: AgentInfo;
@@ -22,10 +28,12 @@ interface ClaimResponse {
     email: string;
     displayName?: string;
   };
+  profileStatus?: ProfileStatus;
   canClaim?: boolean;
   message?: string;
   error?: string;
   hint?: string;
+  code?: string;
 }
 
 function formatDate(timestamp?: { _seconds: number }): string {
@@ -52,6 +60,8 @@ export default function ClaimAgentPage({
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
   const [claimed, setClaimed] = useState(false);
   const [claimMessage, setClaimMessage] = useState<string | null>(null);
+  const [profileStatus, setProfileStatus] = useState<ProfileStatus | null>(null);
+  const [canClaim, setCanClaim] = useState(false);
 
   // Fetch agent info
   useEffect(() => {
@@ -78,6 +88,10 @@ export default function ClaimAgentPage({
         if (data.agent) {
           setAgentInfo(data.agent);
         }
+        if (data.profileStatus) {
+          setProfileStatus(data.profileStatus);
+        }
+        setCanClaim(data.canClaim ?? false);
       } catch (err) {
         console.error("Error fetching agent info:", err);
         setError("Failed to load agent information. Please try again.");
@@ -304,9 +318,56 @@ export default function ClaimAgentPage({
               </p>
             </div>
 
+            {/* Profile Requirements Checklist */}
+            {profileStatus && !canClaim && (
+              <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <p className="text-amber-400 text-sm font-medium mb-3">
+                  Complete these requirements to claim your agent:
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm">
+                    {profileStatus.hasDisplayName ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-neutral-500">
+                        <circle cx="12" cy="12" r="10" />
+                      </svg>
+                    )}
+                    <span className={profileStatus.hasDisplayName ? "text-neutral-300" : "text-neutral-400"}>
+                      Add a display name
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2 text-sm">
+                    {profileStatus.isPublic ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-neutral-500">
+                        <circle cx="12" cy="12" r="10" />
+                      </svg>
+                    )}
+                    <span className={profileStatus.isPublic ? "text-neutral-300" : "text-neutral-400"}>
+                      Set profile to public
+                    </span>
+                  </li>
+                </ul>
+                <Link
+                  href="/profile"
+                  className="mt-4 block w-full px-4 py-2 bg-amber-500/20 text-amber-400 text-sm rounded-lg font-medium hover:bg-amber-500/30 transition-colors text-center"
+                >
+                  Complete Profile
+                </Link>
+              </div>
+            )}
+
             <button
               onClick={handleClaim}
-              disabled={claiming}
+              disabled={claiming || !canClaim}
               className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {claiming ? (

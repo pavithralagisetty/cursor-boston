@@ -18,13 +18,6 @@
       ]
     },
     {
-      "collectionGroup": "agents",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "apiKeyHash", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "messageReactions",
       "queryScope": "COLLECTION",
       "fields": [

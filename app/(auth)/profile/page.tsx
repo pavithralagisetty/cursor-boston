@@ -44,6 +44,14 @@ interface TalkSubmission {
   submittedAt: { toDate: () => Date } | null;
 }
 
+interface ConnectedAgent {
+  id: string;
+  name: string;
+  description?: string;
+  avatarUrl?: string;
+  claimedAt?: { _seconds: number };
+}
+
 function ProfilePageContent() {
   const { user, userProfile, loading, signOut, updateUserProfile, sendAddEmailVerification, removeAdditionalEmail, changePrimaryEmail, refreshUserProfile } = useAuth();
   const router = useRouter();
@@ -80,6 +88,10 @@ function ProfilePageContent() {
   const [connectedGithub, setConnectedGithub] = useState<{ id: string; login: string; name?: string; avatar_url?: string; html_url: string } | null>(null);
   const [wasGithubDisconnected, setWasGithubDisconnected] = useState(false);
   const searchParams = useSearchParams();
+
+  // Connected agents state
+  const [connectedAgents, setConnectedAgents] = useState<ConnectedAgent[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
 
   // Get Discord info: prioritize local state changes over userProfile
   const discordInfo = wasDisconnected ? null : (connectedDiscord || userProfile?.discord);
@@ -714,6 +726,34 @@ function ProfilePageContent() {
 
     if (user) {
       fetchUserData();
+    }
+  }, [user]);
+
+  // Fetch connected agents
+  useEffect(() => {
+    async function fetchConnectedAgents() {
+      if (!user) return;
+
+      setLoadingAgents(true);
+      try {
+        const response = await fetch("/api/agents/user", {
+          headers: {
+            Authorization: `Bearer ${await user.getIdToken()}`,
+          },
+        });
+        const data = await response.json();
+        if (data.success && data.agents) {
+          setConnectedAgents(data.agents);
+        }
+      } catch (error) {
+        console.error("Error fetching connected agents:", error);
+      } finally {
+        setLoadingAgents(false);
+      }
+    }
+
+    if (user) {
+      fetchConnectedAgents();
     }
   }, [user]);
 
@@ -1843,6 +1883,95 @@ function ProfilePageContent() {
                     >
                       {githubConnecting ? "Connecting..." : "Connect GitHub"}
                     </button>
+                  )}
+                </div>
+
+                {/* AI Agents Section */}
+                <div className="pt-4 border-t border-neutral-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-white font-medium">AI Agents</p>
+                      <p className="text-neutral-400 text-sm">
+                        {loadingAgents
+                          ? "Loading..."
+                          : connectedAgents.length > 0
+                          ? `${connectedAgents.length} agent${connectedAgents.length > 1 ? "s" : ""} connected`
+                          : "No agents connected"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {connectedAgents.length > 0 && (
+                        <div className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 rounded-lg">
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className="text-purple-400"
+                          >
+                            <rect x="3" y="11" width="18" height="10" rx="2" />
+                            <circle cx="12" cy="5" r="2" />
+                            <path d="M12 7v4" />
+                          </svg>
+                          <span className="text-purple-400 text-xs font-medium">
+                            {connectedAgents.length}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* List of connected agents */}
+                  {connectedAgents.length > 0 && (
+                    <div className="space-y-2">
+                      {connectedAgents.map((agent) => (
+                        <div
+                          key={agent.id}
+                          className="flex items-center gap-3 p-3 bg-neutral-800/50 rounded-lg"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                            {agent.avatarUrl ? (
+                              <Image
+                                src={agent.avatarUrl}
+                                alt={agent.name}
+                                width={32}
+                                height={32}
+                                className="rounded-full"
+                              />
+                            ) : (
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                className="text-purple-400"
+                              >
+                                <rect x="3" y="11" width="18" height="10" rx="2" />
+                                <circle cx="12" cy="5" r="2" />
+                                <path d="M12 7v4" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-sm font-medium truncate">
+                              {agent.name}
+                            </p>
+                            {agent.description && (
+                              <p className="text-neutral-400 text-xs truncate">
+                                {agent.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 rounded text-xs text-emerald-400">
+                            Active
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
