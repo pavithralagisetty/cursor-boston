@@ -356,11 +356,14 @@ export default function ClaimAgentPage({
                     </span>
                   </li>
                 </ul>
+                <p className="text-neutral-500 text-xs mt-3">
+                  {!profileStatus.isPublic && "Click the \"Private Profile\" badge next to your name to make it public."}
+                </p>
                 <Link
                   href="/profile"
-                  className="mt-4 block w-full px-4 py-2 bg-amber-500/20 text-amber-400 text-sm rounded-lg font-medium hover:bg-amber-500/30 transition-colors text-center"
+                  className="mt-3 block w-full px-4 py-2 bg-amber-500/20 text-amber-400 text-sm rounded-lg font-medium hover:bg-amber-500/30 transition-colors text-center"
                 >
-                  Complete Profile
+                  Go to Profile Settings
                 </Link>
               </div>
             )}

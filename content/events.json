@@ -1,21 +1,27 @@
 {
   "upcoming": [
     {
-      "id": "hult-workshop-2026",
-      "title": "Cursor Workshop at Hult",
-      "date": "2026-02-01",
+      "id": "cafe-cursor-boston-2026",
+      "title": "Cafe Cursor Boston",
+      "date": "TBD",
       "time": "TBD",
-      "location": "Hult International Business School, Boston",
-      "type": "workshop",
-      "description": "Your powered edge in Business & Tech. Learn AI-powered development for academic writing, job success, software development, and startup acceleration.",
+      "location": "Cambridge, Massachusetts",
+      "type": "meetup",
+      "description": "Join us for the first Cursor community event in Boston. Featuring co-working, Cursor workshops for entrepreneurs, engineers, and non-technical folks. Meet the community, learn something new, and grab some coffee.",
       "image": "/Gemini_Generated_Image_lc032wlc032wlc03.png",
       "lumaUrl": "https://lu.ma/lpki2hd6",
-      "lumaEventId": "evt-JygYtduLJkyFgd7",
+      "lumaEventId": "lpki2hd6",
+      "registrationRequired": true,
+      "perks": [
+        "Cursor Credits",
+        "Stickers",
+        "Cursor Coffee"
+      ],
       "topics": [
-        "Deep Research for Academic Writing",
-        "First Job Success",
-        "Professional Software Development",
-        "Startup Acceleration"
+        "Co-working",
+        "Workshops for Entrepreneurs",
+        "Workshops for Engineers",
+        "Workshops for Non-Technical Folks"
       ]
     }
   ],

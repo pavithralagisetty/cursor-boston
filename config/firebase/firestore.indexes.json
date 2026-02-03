@@ -18,6 +18,15 @@
       ]
     },
     {
+      "collectionGroup": "agents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "claimedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "messageReactions",
       "queryScope": "COLLECTION",
       "fields": [

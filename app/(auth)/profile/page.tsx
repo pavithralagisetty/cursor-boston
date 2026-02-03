@@ -880,9 +880,59 @@ function ProfilePageContent() {
 
             {/* User Info */}
             <div className="flex-1 text-center md:text-left">
-              <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">
-                {user.displayName || "Community Member"}
-              </h1>
+              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mb-1">
+                <h1 className="text-2xl md:text-3xl font-bold text-white">
+                  {user.displayName || "Community Member"}
+                </h1>
+                {/* Public Profile Toggle */}
+                <button
+                  onClick={async () => {
+                    if (!db || !user) return;
+                    const newIsPublic = !profileSettings.visibility.isPublic;
+                    setProfileSettings((prev) => ({
+                      ...prev,
+                      visibility: { ...prev.visibility, isPublic: newIsPublic },
+                    }));
+                    try {
+                      const userRef = doc(db, "users", user.uid);
+                      await updateDoc(userRef, {
+                        "visibility.isPublic": newIsPublic,
+                        updatedAt: serverTimestamp(),
+                      });
+                    } catch (error) {
+                      console.error("Error updating visibility:", error);
+                      // Revert on error
+                      setProfileSettings((prev) => ({
+                        ...prev,
+                        visibility: { ...prev.visibility, isPublic: !newIsPublic },
+                      }));
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 text-sm rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-900 ${
+                    profileSettings.visibility.isPublic
+                      ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 focus-visible:ring-emerald-400"
+                      : "bg-neutral-700 text-neutral-400 hover:bg-neutral-600 focus-visible:ring-neutral-400"
+                  }`}
+                >
+                  {profileSettings.visibility.isPublic ? (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      Public Profile
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                      Private Profile
+                    </>
+                  )}
+                </button>
+              </div>
               <p className="text-neutral-400 mb-3">{user.email}</p>
 
               <div className="flex flex-wrap gap-2 justify-center md:justify-start">
@@ -949,6 +999,16 @@ function ProfilePageContent() {
                     </svg>
                     {githubConnecting ? "Connecting..." : "Connect GitHub"}
                   </button>
+                )}
+                {connectedAgents.length > 0 && (
+                  <span className="px-3 py-1 bg-purple-500/10 text-purple-400 text-sm rounded-full inline-flex items-center gap-1">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4" />
+                    </svg>
+                    {connectedAgents.length} Agent{connectedAgents.length > 1 ? "s" : ""}
+                  </span>
                 )}
               </div>
               {discordError && (
@@ -1252,6 +1312,86 @@ function ProfilePageContent() {
                 </Link>
               </div>
             </div>
+
+            {/* Your AI Agents */}
+            {(connectedAgents.length > 0 || loadingAgents) && (
+              <div className="bg-neutral-900 rounded-2xl p-6 border border-neutral-800">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className="text-purple-400"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4" />
+                    </svg>
+                    Your AI Agents
+                  </h2>
+                  <span className="px-2 py-1 bg-purple-500/10 text-purple-400 text-xs rounded-full">
+                    {connectedAgents.length} connected
+                  </span>
+                </div>
+                {loadingAgents ? (
+                  <div className="flex justify-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-purple-400"></div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {connectedAgents.map((agent) => (
+                      <div
+                        key={agent.id}
+                        className="flex items-center gap-4 p-4 bg-neutral-800/50 rounded-xl"
+                      >
+                        <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                          {agent.avatarUrl ? (
+                            <Image
+                              src={agent.avatarUrl}
+                              alt={agent.name}
+                              width={48}
+                              height={48}
+                              className="rounded-full"
+                            />
+                          ) : (
+                            <svg
+                              width="24"
+                              height="24"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              className="text-purple-400"
+                            >
+                              <rect x="3" y="11" width="18" height="10" rx="2" />
+                              <circle cx="12" cy="5" r="2" />
+                              <path d="M12 7v4" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium">{agent.name}</p>
+                          {agent.description && (
+                            <p className="text-neutral-400 text-sm truncate">
+                              {agent.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full">
+                            Active
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Recent Activity */}
             <div className="bg-neutral-900 rounded-2xl p-6 border border-neutral-800">
