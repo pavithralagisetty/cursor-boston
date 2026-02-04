@@ -137,18 +137,22 @@ export async function getSessionsWithStatus(
   const sessions = await getOrCreateSessions(eventId);
   const statuses: CoworkingSlotStatus[] = [];
 
-  for (const session of sessions) {
-    // Get registrations for this session
-    const registrationsRef = db.collection("coworkingRegistrations");
-    const registrationsSnapshot = await registrationsRef
-      .where("eventId", "==", eventId)
-      .where("sessionId", "==", session.id)
-      .get();
+  // Get all registrations for this event at once (single field query)
+  const registrationsRef = db.collection("coworkingRegistrations");
+  const allRegistrationsSnapshot = await registrationsRef
+    .where("eventId", "==", eventId)
+    .get();
+  
+  const allRegistrations = allRegistrationsSnapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  })) as CoworkingRegistration[];
 
-    const registrations = registrationsSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as CoworkingRegistration[];
+  for (const session of sessions) {
+    // Filter registrations for this session in memory
+    const registrations = allRegistrations.filter(
+      (r) => r.sessionId === session.id
+    );
 
     // Check if user is registered
     const userRegistration = userId
@@ -208,41 +212,50 @@ export async function registerForSession(
 
   // Use a transaction to ensure atomic registration
   try {
+    // Pre-fetch data outside transaction to avoid composite index issues
+    // Get session
+    const sessionDoc = await sessionsRef.doc(sessionId).get();
+    if (!sessionDoc.exists) {
+      return { success: false, error: "Session not found" };
+    }
+
+    const session = sessionDoc.data() as Omit<CoworkingSession, "id">;
+    if (session.eventId !== eventId) {
+      return { success: false, error: "Session does not belong to this event" };
+    }
+
+    // Check if user already registered for ANY session in this event
+    // Use single field query to avoid composite index requirement
+    const userRegistrations = await registrationsRef
+      .where("userId", "==", userId)
+      .get();
+    
+    const existingForEvent = userRegistrations.docs.find(
+      (doc) => doc.data().eventId === eventId
+    );
+
+    if (existingForEvent) {
+      const existingReg = existingForEvent.data();
+      if (existingReg.sessionId === sessionId) {
+        return { success: false, error: "You are already registered for this session" };
+      }
+      return { success: false, error: "You are already registered for another session at this event. Cancel your existing registration first." };
+    }
+
+    // Check capacity using single field query
+    const sessionRegistrations = await registrationsRef
+      .where("sessionId", "==", sessionId)
+      .get();
+
+    if (sessionRegistrations.size >= session.maxSlots) {
+      return { success: false, error: "This session is full" };
+    }
+
+    // Create registration in transaction
     const result = await db.runTransaction(async (tx) => {
-      // Get session
-      const sessionDoc = await tx.get(sessionsRef.doc(sessionId));
-      if (!sessionDoc.exists) {
-        return { success: false, error: "Session not found" };
-      }
-
-      const session = sessionDoc.data() as Omit<CoworkingSession, "id">;
-      if (session.eventId !== eventId) {
-        return { success: false, error: "Session does not belong to this event" };
-      }
-
-      // Check if user already registered for ANY session in this event
-      const existingSnapshot = await tx.get(
-        registrationsRef
-          .where("eventId", "==", eventId)
-          .where("userId", "==", userId)
-      );
-
-      if (!existingSnapshot.empty) {
-        const existingReg = existingSnapshot.docs[0].data();
-        if (existingReg.sessionId === sessionId) {
-          return { success: false, error: "You are already registered for this session" };
-        }
-        return { success: false, error: "You are already registered for another session at this event. Cancel your existing registration first." };
-      }
-
-      // Check capacity
-      const currentRegistrations = await tx.get(
-        registrationsRef
-          .where("eventId", "==", eventId)
-          .where("sessionId", "==", sessionId)
-      );
-
-      if (currentRegistrations.size >= session.maxSlots) {
+      // Re-check capacity in transaction for race condition safety
+      const currentCount = (await tx.get(sessionsRef.doc(sessionId))).data()?.currentBookings || 0;
+      if (currentCount >= session.maxSlots) {
         return { success: false, error: "This session is full" };
       }
 
@@ -280,7 +293,7 @@ export async function registerForSession(
     return result;
   } catch (error) {
     console.error("Error registering for session:", error);
-    return { success: false, error: "Failed to register" };
+    return { success: false, error: "Failed to register. Please try again." };
   }
 }
 
@@ -298,17 +311,20 @@ export async function cancelRegistration(
   const sessionsRef = db.collection("coworkingSessions");
 
   try {
+    // Use single field query to avoid composite index requirement
     const snapshot = await registrationsRef
-      .where("eventId", "==", eventId)
       .where("userId", "==", userId)
-      .limit(1)
       .get();
+    
+    // Filter for this event in memory
+    const regDoc = snapshot.docs.find(
+      (doc) => doc.data().eventId === eventId
+    );
 
-    if (snapshot.empty) {
+    if (!regDoc) {
       return { success: false, error: "No registration found" };
     }
 
-    const regDoc = snapshot.docs[0];
     const regData = regDoc.data();
 
     await db.runTransaction(async (tx) => {
@@ -379,7 +395,7 @@ export async function getUserProfileForRegistration(
   const profile = userSnap.data();
   return {
     displayName: profile?.displayName || profile?.name || "Anonymous",
-    photoUrl: profile?.photoUrl,
-    github: profile?.github?.username,
+    photoUrl: profile?.photoURL,
+    github: profile?.github?.login,
   };
 }
