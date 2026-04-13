@@ -420,6 +420,7 @@ async function buildUnifiedDisplayRankMaps(
     }
     const emailRaw =
       profile && typeof profile.email === "string" ? profile.email.toLowerCase() : null;
+    if (emailRaw && DECLINED_EMAILS.has(emailRaw)) continue;
     rows.push({
       userId,
       email: emailRaw,

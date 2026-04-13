@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
+import { DECLINED_EMAILS, JUDGE_EMAILS } from "../lib/hackathon-event-signup";
 
 const REPO_OWNER = "rogerSuperBuilderAlpha";
 const REPO_NAME = "cursor-boston";
@@ -25,16 +26,6 @@ const TOP_N = 50;
 
 const JUDGE_LOGINS = new Set(["rogersuperbuilderalpha", "rayruizhiliao"]);
 const BOT_SUFFIXES = ["[bot]"];
-const JUDGE_EMAILS = new Set(["regorhunt02052@gmail.com", "rayruizhiliao@gmail.com"]);
-const DECLINED_EMAILS = new Set([
-  "nasit.v@northeastern.edu",
-  "renganathan.b@northeastern.edu",
-  "revoftc@gmail.com",
-  "sakhare.c@northeastern.edu",
-  "lnu.ava@northeastern.edu",
-  "harrychow8888@gmail.com",
-  "brucejia@bu.edu",
-]);
 
 /**
  * Known GitHub login corrections: Luma free-text → actual GitHub OAuth login.
