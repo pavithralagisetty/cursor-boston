@@ -18,10 +18,6 @@ import { getAdminDb } from "../lib/firebase-admin";
 import { sendEmail } from "../lib/mailgun";
 import { buildUnsubscribeUrl } from "../lib/unsubscribe-token";
 
-const SITE_ORIGIN = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://cursorboston.com"
-).replace(/\/$/, "");
-
 // ---------------------------------------------------------------------------
 // Email template
 // ---------------------------------------------------------------------------
@@ -55,39 +51,45 @@ function buildEmail(contact: ContactData): {
   );
   const unsubUrl = buildUnsubscribeUrl(contact.email);
 
-  const isHackASprintRegistrant = contact.events.some(
-    (e) => e.eventName.toLowerCase().includes("hack-a-sprint")
-  );
+  const subject = "Cursor Boston — what's next (and how to get involved)";
 
-  const subject = isHackASprintRegistrant
-    ? "Cursor Boston — Hack-a-Sprint is next week + Boston Tech Week workshop"
-    : "Cursor Boston — Two upcoming events you should know about";
-
-  // Hack-a-Sprint CTA (different for registered vs not)
-  const hackASprintBlock = isHackASprintRegistrant
-    ? `<p>You're registered for the <strong>Hack-a-Sprint on April 13</strong> — it's next week! If you haven't already, make sure to complete your <a href="${SITE_ORIGIN}/hackathons/hack-a-sprint-2026/signup">website signup</a> and submit PRs to the <a href="https://github.com/rogerSuperBuilderAlpha/cursor-boston">community repo</a> to move up the leaderboard. Spots are ranked by merged PRs, then signup order.</p>`
-    : `<p><strong>Hack-a-Sprint — April 13, 4:00–8:00 PM ET, Back Bay, Boston</strong><br/>Our inaugural in-person sprint for 50 builders. Solo competition, $50 in Cursor Credits for every selected participant, $1,200 prize pool. There's still time to register and earn your spot — merged PRs to the community repo are the fastest way up the leaderboard.<br/><a href="https://luma.com/uixo8hl6">Register on Luma</a> · <a href="${SITE_ORIGIN}/hackathons/hack-a-sprint-2026/signup">Claim your spot on the leaderboard</a></p>`;
+  const eventNames = contact.events.map((e) => e.eventName).filter(Boolean);
+  const uniqueEvents = [...new Set(eventNames)];
+  const eventListHtml =
+    uniqueEvents.length > 0
+      ? uniqueEvents.map((n) => escapeHtml(n)).join(", ")
+      : "a Cursor Boston event";
+  const eventListText =
+    uniqueEvents.length > 0
+      ? uniqueEvents.join(", ")
+      : "a Cursor Boston event";
 
   const html = `<!DOCTYPE html><html><body style="font-family:system-ui,Segoe UI,sans-serif;line-height:1.6;color:#111;max-width:640px;">
 <p>Hi ${first},</p>
 
-<p>A quick update from Cursor Boston with two events coming up and some news about where this community is heading.</p>
+<p>Thank you again for being part of <strong>${eventListHtml}</strong> and the broader Cursor Boston community. Whether you shipped a PR, showed up on the waitlist, or just helped someone else in the repo, it matters.</p>
 
-<h3 style="margin-top:24px;margin-bottom:8px;">Upcoming Events</h3>
+<h3 style="margin-top:24px;margin-bottom:8px;">What we're building toward</h3>
 
-${hackASprintBlock}
+<p>Cursor Boston isn't meant to be a one-off. The goal is a <strong>sustainable community</strong>: more events, shared ownership of the site and repo, and clearer paths for people who want to <strong>organize</strong>, <strong>maintain</strong>, or <strong>host</strong> — not only attend.</p>
 
-<p><strong>Open Source Workshop with AIC at Boston Tech Week — May 30, 12:00–5:00 PM ET, Boston</strong><br/>A hands-on half-day session co-hosted with AIC (AI Community). Two tracks: contribute to the Cursor Boston repo (beginner-friendly) or tackle curated impactful open source projects using Cursor as your AI co-pilot. Walk away with merged PRs, Cursor credits, and practical open source skills. No prior open source experience needed.<br/><a href="https://luma.com/w4gvg7fl">Register on Luma</a></p>
+<h3 style="margin-top:24px;margin-bottom:8px;">Ways to plug in</h3>
 
-<h3 style="margin-top:24px;margin-bottom:8px;">This Community Belongs to Boston</h3>
+<p><strong>Venues &amp; partnerships</strong> — If you have (or can intro) space for meetups or hack nights, reply to this email or write <a href="mailto:roger@cursorboston.com">roger@cursorboston.com</a>. We'll work with you on format and logistics.</p>
 
-<p>Cursor Boston isn't a company — it's a community platform that represents the builders, developers, and creators across Boston who are using AI to ship real work. The website at <a href="${SITE_ORIGIN}">cursorboston.com</a> is open source, and the events, content, and direction are shaped by the people who show up and contribute.</p>
+<p><strong>Repo &amp; site</strong> — We'll be reaching out about <strong>maintainers</strong> and clearer contribution paths so the project isn't dependent on one person. If you're interested in helping triage issues/PRs or shape how the site evolves, say so in a reply.</p>
 
-<p>Over the next few months, we'll be adding maintainers to help guide the community, run events, and shape what Cursor Boston becomes. If you're interested in becoming a maintainer — whether you want to help organize events, review PRs, or build features on the site — reach out to <a href="mailto:roger@cursorboston.com">roger@cursorboston.com</a>. We're looking for people who care about the community and want to help it grow.</p>
+<p><strong>Future events</strong> — Tell us what you want next (workshops, sprints, socials, hybrid, etc.). Concrete ideas and "I'd help with X" notes are especially useful.</p>
 
-<p>Questions about anything? Email <a href="mailto:roger@cursorboston.com">roger@cursorboston.com</a>.</p>
+<h3 style="margin-top:24px;margin-bottom:8px;">Honest note</h3>
 
-<p>See you soon,<br/>— Cursor Boston</p>
+<p>The site and backend will keep moving toward <strong>community-run</strong> processes where it makes sense. That takes time, but the direction is set: more voices, more shared responsibility, and more room for people who want to lead small pieces.</p>
+
+<p>Thanks for helping make this community what it is already. We're glad you're here.</p>
+
+<p>— Roger &amp; Cursor Boston<br/>
+<a href="mailto:roger@cursorboston.com">roger@cursorboston.com</a><br/>
+<a href="https://cursorboston.com">https://cursorboston.com</a></p>
 
 <p style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:12px;color:#888;">
 You're receiving this because you registered for a Cursor Boston event on Luma.<br/>
@@ -95,35 +97,31 @@ Don't want to hear from us? <a href="${escapeHtml(unsubUrl)}" style="color:#888;
 </p>
 </body></html>`;
 
-  const hackASprintText = isHackASprintRegistrant
-    ? `You're registered for the Hack-a-Sprint on April 13 — it's next week! Complete your website signup and submit PRs to the community repo to move up the leaderboard: ${SITE_ORIGIN}/hackathons/hack-a-sprint-2026/signup`
-    : `Hack-a-Sprint — April 13, 4:00-8:00 PM ET, Back Bay, Boston
-  50 builders, solo competition, $50 Cursor Credits per participant, $1,200 prize pool.
-  Register: https://luma.com/uixo8hl6
-  Claim your leaderboard spot: ${SITE_ORIGIN}/hackathons/hack-a-sprint-2026/signup`;
-
   const text = `Hi ${contact.firstName?.trim() || contact.name?.split(" ")[0]?.trim() || "there"},
 
-A quick update from Cursor Boston with two events coming up and some news about where this community is heading.
+Thank you again for being part of ${eventListText} and the broader Cursor Boston community. Whether you shipped a PR, showed up on the waitlist, or just helped someone else in the repo, it matters.
 
-UPCOMING EVENTS
+WHAT WE'RE BUILDING TOWARD
 
-${hackASprintText}
+Cursor Boston isn't meant to be a one-off. The goal is a sustainable community: more events, shared ownership of the site and repo, and clearer paths for people who want to organize, maintain, or host — not only attend.
 
-Open Source Workshop with AIC at Boston Tech Week — May 30, 12:00-5:00 PM ET, Boston
-  Hands-on half-day session co-hosted with AIC. Two tracks: beginner-friendly Cursor Boston repo or curated impactful open source projects. No prior open source experience needed.
-  Register: https://luma.com/w4gvg7fl
+WAYS TO PLUG IN
 
-THIS COMMUNITY BELONGS TO BOSTON
+Venues & partnerships — If you have (or can intro) space for meetups or hack nights, reply to this email or write roger@cursorboston.com. We'll work with you on format and logistics.
 
-Cursor Boston isn't a company — it's a community platform that represents the builders, developers, and creators across Boston who are using AI to ship real work. The website is open source, and the events, content, and direction are shaped by the people who show up and contribute.
+Repo & site — We'll be reaching out about maintainers and clearer contribution paths so the project isn't dependent on one person. If you're interested in helping triage issues/PRs or shape how the site evolves, say so in a reply.
 
-Over the next few months, we'll be adding maintainers to help guide the community. If you're interested — whether you want to help organize events, review PRs, or build features — email roger@cursorboston.com.
+Future events — Tell us what you want next (workshops, sprints, socials, hybrid, etc.). Concrete ideas and "I'd help with X" notes are especially useful.
 
-Questions? Email roger@cursorboston.com.
+HONEST NOTE
 
-See you soon,
-— Cursor Boston
+The site and backend will keep moving toward community-run processes where it makes sense. That takes time, but the direction is set: more voices, more shared responsibility, and more room for people who want to lead small pieces.
+
+Thanks for helping make this community what it is already. We're glad you're here.
+
+— Roger & Cursor Boston
+roger@cursorboston.com
+https://cursorboston.com
 
 You're receiving this because you registered for a Cursor Boston event on Luma.
 Unsubscribe: ${unsubUrl}`;

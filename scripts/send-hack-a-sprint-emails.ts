@@ -12,6 +12,7 @@
  *   npx tsx scripts/send-hack-a-sprint-emails.ts --dry-run --reminder [--csv path/to/export.csv]
  *   npx tsx scripts/send-hack-a-sprint-emails.ts --dry-run --correction [--csv path/to/export.csv]
  *   npx tsx scripts/send-hack-a-sprint-emails.ts --dry-run --dayof [--csv path/to/export.csv]
+ *   npx tsx scripts/send-hack-a-sprint-emails.ts --dry-run --waitlist-pr-deadline [--csv path/to/export.csv]
  *
  * --announce-list: sends a simpler email linking to the participant list page
  *   (accepted & waitlisted) instead of the full tier-specific emails.
@@ -21,6 +22,10 @@
  *
  * --dayof: event-day blast — 4 PM / late message for confirmed; 10 AM PR merge cutoff
  *   and open-PR queue guidance for waitlisted; shared community / governance copy for all.
+ *
+ * --waitlist-pr-deadline: **waitlisted recipients only** — short merge window, 4 PM arrival,
+ *   Discord for rank questions, and per-recipient open-PR + review status from GitHub (needs token).
+ *   Optional env: HACK_A_SPRINT_WAITLIST_PR_CUTOFF_LABEL, HACK_A_SPRINT_WAITLIST_PR_WINDOW_MINUTES.
  *
  * Requires: FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS;
  * Use the same **GITHUB_TOKEN** as production (e.g. from `.env.local`). PR counts use
@@ -47,6 +52,10 @@ import {
   fetchMergedPrCountByAuthorForRepo,
   fetchMergedPrCountsForLogins,
 } from "../lib/github-merged-pr-count";
+import {
+  fetchOpenPrsWithReviewStatusForAuthors,
+  type OpenPrWithReviewSummary,
+} from "../lib/github-open-pr-review-status";
 import { getGithubRepoPair, getGithubRepoWebBaseUrl } from "../lib/github-recent-merged-prs";
 import { getAdminAuth, getAdminDb } from "../lib/firebase-admin";
 import { sendEmail } from "../lib/mailgun";
@@ -54,6 +63,19 @@ import { sendEmail } from "../lib/mailgun";
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_APP_URL || "https://cursorboston.com";
 const SIGNUP_PATH = "/hackathons/hack-a-sprint-2026/signup";
 const LUMA_URL = "https://luma.com/uixo8hl6";
+const DISCORD_INVITE_URL = "https://discord.gg/Wsncg8YYqc";
+
+/** Shown in --waitlist-pr-deadline copy (e.g. merge cutoff time). Override with env when sending. */
+const WAITLIST_PR_CUTOFF_LABEL =
+  process.env.HACK_A_SPRINT_WAITLIST_PR_CUTOFF_LABEL?.trim() || "3:20 PM ET";
+
+const WAITLIST_PR_WINDOW_MINUTES = (() => {
+  const n = Number.parseInt(
+    process.env.HACK_A_SPRINT_WAITLIST_PR_WINDOW_MINUTES ?? "40",
+    10
+  );
+  return Number.isFinite(n) && n > 0 ? n : 40;
+})();
 
 const GITHUB_COL_KEY = "What is your GitHub username?";
 const PR_COL_KEY =
@@ -1050,6 +1072,103 @@ ${block}`;
   return { subject, html, text };
 }
 
+function buildWaitlistPrDeadlineEmail(args: {
+  name: string;
+  rank: number | null;
+  totalOnLeaderboard: number;
+  mergedPrCount: number;
+  githubLogin: string | null;
+  /** From GitHub API; empty array = no open PRs for this login in the repo. */
+  openPrs: OpenPrWithReviewSummary[] | undefined;
+  cutoffLabel: string;
+}): { subject: string; html: string; text: string } {
+  const {
+    name,
+    rank,
+    totalOnLeaderboard,
+    mergedPrCount,
+    githubLogin,
+    openPrs,
+    cutoffLabel,
+  } = args;
+  const first = escapeHtml(name);
+  const signupUrl = `${SITE_ORIGIN.replace(/\/$/, "")}${SIGNUP_PATH}`;
+  const repoUrl = getGithubRepoWebBaseUrl();
+  const pullsUrl = `${repoUrl.replace(/\/$/, "")}/pulls`;
+  const subject = `Hack-a-Sprint waitlist — ~${WAITLIST_PR_WINDOW_MINUTES} min left for PRs to count (by ${cutoffLabel})`;
+
+  const rankLine =
+    rank !== null ?
+      `You’re <strong>#${rank}</strong> on the waitlist (of <strong>${totalOnLeaderboard}</strong> on the public list) with <strong>${mergedPrCount}</strong> merged PR${mergedPrCount === 1 ? "" : "s"}.`
+    : `You’re on the waitlist with <strong>${mergedPrCount}</strong> merged PR${mergedPrCount === 1 ? "" : "s"}.`;
+
+  let prSectionHtml: string;
+  let prSectionText: string;
+
+  if (!githubLogin?.trim()) {
+    prSectionHtml = `<p>We don’t have a GitHub username on file for you from this registration path — merged PRs in <a href="${escapeHtml(repoUrl)}">${escapeHtml(repoUrl)}</a> are what move you up. If you’ve been contributing under another handle, message me on <a href="${escapeHtml(DISCORD_INVITE_URL)}">Discord</a> with your GitHub login so we can sanity-check.</p>`;
+    prSectionText = `We may not have your GitHub username on file — PRs in ${repoUrl} are what move you up. If you use another handle, message on Discord: ${DISCORD_INVITE_URL}`;
+  } else if (!openPrs || openPrs.length === 0) {
+    prSectionHtml = `<p>Right now we don’t see any <strong>open</strong> pull requests from <strong>${escapeHtml(githubLogin)}</strong> in the community repo. If you just opened one, refresh in a minute; if you use a different GitHub account, tell us on Discord. To get a merge in before the cutoff, pick something small from <a href="${escapeHtml(pullsUrl)}">open PRs</a> (avoid duplicating work already in flight) or an <a href="${escapeHtml(repoUrl)}/issues">open issue</a>.</p>`;
+    prSectionText = `No open PRs from @${githubLogin} in the repo right now. If you use another account, say so on Discord. Open PR queue: ${pullsUrl}`;
+  } else {
+    const items = openPrs
+      .map(
+        (pr) =>
+          `<li><strong><a href="${escapeHtml(pr.htmlUrl)}">#${pr.number}</a></strong> — ${escapeHtml(pr.title)}<br/><span style="color:#444;font-size:14px;">${escapeHtml(pr.reviewSummary)}</span></li>`
+      )
+      .join("");
+    prSectionHtml = `<p><strong>Your open PRs</strong> (check comments / CI so they can merge before <strong>${escapeHtml(cutoffLabel)}</strong>):</p><ul style="margin:8px 0;padding-left:20px;">${items}</ul>`;
+    prSectionText = [
+      "Your open PRs:",
+      ...openPrs.map(
+        (pr) =>
+          `- #${pr.number} ${pr.title} — ${pr.reviewSummary} (${pr.htmlUrl})`
+      ),
+    ].join("\n");
+  }
+
+  const lead = `<p>Hi ${first},</p>
+<p>${rankLine}</p>
+<p><strong>You have about ${WAITLIST_PR_WINDOW_MINUTES} minutes</strong> — anything merged by <strong>${escapeHtml(cutoffLabel)}</strong> can still improve your waitlist ranking. After that, we’re locking in order for day-of.</p>
+<p><strong>Day-of logistics:</strong></p>
+<ul>
+<li><strong>Arrive before 4:00 PM ET.</strong> Check in on the website to see your spot and status: <a href="${escapeHtml(signupUrl)}">${escapeHtml(signupUrl)}</a></li>
+<li><strong>Need your rank or a quick sanity-check?</strong> Message me on Discord: <a href="${escapeHtml(DISCORD_INVITE_URL)}">${escapeHtml(DISCORD_INVITE_URL)}</a> (include the email you used to register if it isn’t obvious).</li>
+</ul>
+${prSectionHtml}
+<p style="font-size:14px;color:#333;"><strong>If you have a PR open:</strong> read maintainer comments, fix CI failures, and resolve conversations so it’s merge-ready — don’t assume silence means it will land in time.</p>
+<p>At <strong>4:00 PM ET</strong>, empty confirmed seats go to the waitlist in rank order. Good luck — and thank you for building with us.</p>`;
+
+  const textRank =
+    rank !== null ?
+      `#${rank} on the waitlist (of ${totalOnLeaderboard}) with ${mergedPrCount} merged PRs`
+    : `on the waitlist with ${mergedPrCount} merged PRs`;
+
+  const text = [
+    `Hi ${name},`,
+    "",
+    textRank + ".",
+    "",
+    `About ${WAITLIST_PR_WINDOW_MINUTES} minutes left — merges by ${cutoffLabel} can still improve your ranking.`,
+    "",
+    `Arrive before 4:00 PM ET. Check in / your spot: ${signupUrl}`,
+    "",
+    `Questions about your spot or GitHub? Discord: ${DISCORD_INVITE_URL}`,
+    "",
+    prSectionText,
+    "",
+    "If you have a PR open: read comments, fix CI, resolve threads so it can merge.",
+    "",
+    "At 4:00 PM ET, open seats go to the waitlist in order.",
+    "",
+    `Repo: ${repoUrl}`,
+  ].join("\n");
+
+  const html = emailShell(`${lead}${commonEventBlockHtml()}`);
+  return { subject, html, text };
+}
+
 const RANKING_JSON_PATH = join(__dirname, "data/hack-a-sprint-2026-ranking.json");
 
 type CorrectionRow = {
@@ -1177,12 +1296,25 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
   const dayof = argv.includes("--dayof");
-  const modeCount = [announceList, reminder, correction, dayof].filter(Boolean).length;
+  const waitlistPrDeadline = argv.includes("--waitlist-pr-deadline");
+  const modeCount =
+    [announceList, reminder, correction, dayof, waitlistPrDeadline].filter(Boolean).length;
   if (modeCount > 1) {
-    console.error("Use only one of: --announce-list | --reminder | --correction | --dayof");
+    console.error(
+      "Use only one of: --announce-list | --reminder | --correction | --dayof | --waitlist-pr-deadline"
+    );
     process.exit(1);
   }
-  return { dryRun, send, announceList, reminder, correction, dayof, csvPath };
+  return {
+    dryRun,
+    send,
+    announceList,
+    reminder,
+    correction,
+    dayof,
+    waitlistPrDeadline,
+    csvPath,
+  };
 }
 
 async function sleep(ms: number) {
@@ -1190,7 +1322,8 @@ async function sleep(ms: number) {
 }
 
 async function main() {
-  const { dryRun, send, announceList, reminder, correction, dayof, csvPath } = parseArgs(process.argv.slice(2));
+  const { dryRun, send, announceList, reminder, correction, dayof, waitlistPrDeadline, csvPath } =
+    parseArgs(process.argv.slice(2));
 
   let raw: string;
   try {
@@ -1324,6 +1457,8 @@ async function main() {
     profileBlock: string | null;
     name: string;
     csvSelfReportedPr: string;
+    /** Resolved GitHub login (CSV or profile); null if unknown. */
+    githubLogin: string | null;
   };
 
   const results: RowResult[] = [];
@@ -1349,6 +1484,7 @@ async function main() {
         profileBlock: null,
         name: displayNameFromRow(row),
         csvSelfReportedPr: selfPrText,
+        githubLogin: null,
       });
       continue;
     }
@@ -1359,6 +1495,7 @@ async function main() {
     let rank: number | null = null;
     let mergedPr = 0;
     let profileBlock: string | null = null;
+    let githubLoginForRow: string | null = csvGithub;
 
     if (!uid) {
       const lumaRank = displayRankByEmail.get(normalizedEmail);
@@ -1370,6 +1507,17 @@ async function main() {
         tier = lumaConfirmedByEmail.get(normalizedEmail) ? "CONFIRMED" : "WAITLISTED";
       }
     } else {
+      const userSnap = await db.collection("users").doc(uid).get();
+      const p = userSnap.data();
+      const profLogin =
+        p?.github && typeof p.github === "object" ?
+          (p.github as { login?: string }).login
+        : undefined;
+      const resolvedGithub =
+        csvGithub ||
+        (typeof profLogin === "string" ? profLogin.trim() : null);
+      githubLoginForRow = resolvedGithub;
+
       mergedPr = prByUserId.get(uid) ?? 0;
       const dispRank =
         displayRankByUserId.get(uid) ?? displayRankByEmail.get(normalizedEmail);
@@ -1381,30 +1529,12 @@ async function main() {
           !!lumaConfirmedByEmail.get(normalizedEmail);
         tier = confirmed ? "CONFIRMED" : "WAITLISTED";
         if (!prByUserId.has(uid)) {
-          const userSnap = await db.collection("users").doc(uid).get();
-          const p = userSnap.data();
-          const profLogin =
-            p?.github && typeof p.github === "object" ?
-              (p.github as { login?: string }).login
-            : undefined;
-          const gh =
-            csvGithub ||
-            (typeof profLogin === "string" ? profLogin.trim() : null);
-          mergedPr = mergedPrForLogin(gh, githubBulk);
+          mergedPr = mergedPrForLogin(resolvedGithub, githubBulk);
         }
       } else {
         tier = "SIGNED_UP_NO_SPOT";
-        const userSnap = await db.collection("users").doc(uid).get();
-        profileBlock = getHackathonEventSignupBlockReason(userSnap.data());
-        const p = userSnap.data();
-        const profLogin =
-          p?.github && typeof p.github === "object" ?
-            (p.github as { login?: string }).login
-          : undefined;
-        const gh =
-          csvGithub ||
-          (typeof profLogin === "string" ? profLogin.trim() : null);
-        mergedPr = mergedPrForLogin(gh, githubBulk);
+        profileBlock = getHackathonEventSignupBlockReason(p);
+        mergedPr = mergedPrForLogin(resolvedGithub, githubBulk);
       }
     }
 
@@ -1418,6 +1548,7 @@ async function main() {
       profileBlock,
       name: displayNameFromRow(row),
       csvSelfReportedPr: selfPrText,
+      githubLogin: githubLoginForRow,
     });
   }
 
@@ -1444,13 +1575,78 @@ async function main() {
     console.log(line);
   }
 
+  let openPrByAuthor: Map<string, OpenPrWithReviewSummary[]> | null = null;
+  if (waitlistPrDeadline) {
+    if (!process.env.GITHUB_TOKEN?.trim()) {
+      console.warn(
+        "[warn] GITHUB_TOKEN is not set — open PR / review lookup may fail or rate-limit; set it for reliable per-recipient status."
+      );
+    }
+    const loginSet = new Set<string>();
+    for (const r of results) {
+      if (r.tier !== "WAITLISTED") continue;
+      const lg = r.githubLogin?.trim();
+      if (lg) loginSet.add(lg.toLowerCase());
+    }
+    console.log(
+      `\n--waitlist-pr-deadline: fetching open PRs + review state for ${loginSet.size} GitHub logins…`
+    );
+    openPrByAuthor = await fetchOpenPrsWithReviewStatusForAuthors(loginSet);
+    const withOpen = [...openPrByAuthor.values()].filter((a) => a.length > 0).length;
+    console.log(
+      `Open PR lookup: ${withOpen} waitlist author(s) with at least one open PR in ${getGithubRepoWebBaseUrl()}.`
+    );
+    for (const r of results) {
+      if (r.tier !== "WAITLISTED") continue;
+      const lg = r.githubLogin?.trim().toLowerCase() ?? "";
+      const prs = lg ? (openPrByAuthor.get(lg) ?? []) : [];
+      console.log(
+        `  ${pad(r.email, 38)} @${pad(r.githubLogin ?? "—", 22)} openPRs=${prs.length}${prs.length ? ` (${prs.map((p) => "#" + p.number).join(", ")})` : ""}`
+      );
+    }
+  }
+
   if (dryRun) {
     console.log("\n--dry-run: no emails sent. Review the table above.");
     if (announceList) console.log("(--announce-list mode: simplified participant-list email)");
     if (reminder) console.log("(--reminder mode: day-before blast)");
     if (correction) console.log("(--correction mode: status correction email)");
     if (dayof) console.log("(--dayof mode: event-day blast)");
+    if (waitlistPrDeadline) console.log("(--waitlist-pr-deadline: waitlisted only)");
     const pickSample = (t: RegistrantTier) => results.find((x) => x.tier === t && x.tier !== "DECLINED");
+
+    if (waitlistPrDeadline) {
+      const waiters = results.filter((r) => r.tier === "WAITLISTED");
+      const withPrs = waiters.filter(
+        (r) => (openPrByAuthor?.get(r.githubLogin?.trim().toLowerCase() ?? "") ?? []).length > 0
+      );
+      const withoutPrs = waiters.filter(
+        (r) => (openPrByAuthor?.get(r.githubLogin?.trim().toLowerCase() ?? "") ?? []).length === 0
+      );
+      const samples = [
+        withPrs[0],
+        withoutPrs.find((r) => r.githubLogin?.trim()),
+        withoutPrs.find((r) => !r.githubLogin?.trim()),
+      ].filter(Boolean) as RowResult[];
+      for (const sample of samples) {
+        if (!sample) continue;
+        const lg = sample.githubLogin?.trim().toLowerCase() ?? "";
+        const openPrs =
+          sample.githubLogin?.trim() ? (openPrByAuthor?.get(lg) ?? []) : undefined;
+        const { subject, html } = buildWaitlistPrDeadlineEmail({
+          name: sample.name,
+          rank: sample.rank,
+          totalOnLeaderboard: totalOnPublicList,
+          mergedPrCount: sample.mergedPrCount,
+          githubLogin: sample.githubLogin,
+          openPrs,
+          cutoffLabel: WAITLIST_PR_CUTOFF_LABEL,
+        });
+        console.log(`\n[WAITLISTED sample: ${sample.email}] Subject: ${subject}`);
+        console.log("Sample HTML preview:\n---\n" + html.slice(0, 900) + "…\n---");
+      }
+      return;
+    }
 
     if (reminder || correction || dayof) {
       const previewTiers: RegistrantTier[] = [
@@ -1510,7 +1706,37 @@ async function main() {
 
   let sent = 0;
   let failed = 0;
+  let skippedNonWaitlist = 0;
   for (const r of results) {
+    if (waitlistPrDeadline) {
+      if (r.tier !== "WAITLISTED") {
+        skippedNonWaitlist++;
+        continue;
+      }
+      const lg = r.githubLogin?.trim().toLowerCase() ?? "";
+      const openPrs =
+        r.githubLogin?.trim() ? (openPrByAuthor?.get(lg) ?? []) : undefined;
+      const { subject, html, text } = buildWaitlistPrDeadlineEmail({
+        name: r.name,
+        rank: r.rank,
+        totalOnLeaderboard: totalOnPublicList,
+        mergedPrCount: r.mergedPrCount,
+        githubLogin: r.githubLogin,
+        openPrs,
+        cutoffLabel: WAITLIST_PR_CUTOFF_LABEL,
+      });
+      try {
+        await sendEmail({ to: r.email, subject, html, text });
+        sent++;
+        console.log(`Sent: ${r.email} (WAITLISTED)`);
+      } catch (e) {
+        failed++;
+        console.error(`Failed: ${r.email}`, e);
+      }
+      await sleep(450);
+      continue;
+    }
+
     if (r.tier === "DECLINED") continue;
     const tier = r.tier as Exclude<RegistrantTier, "DECLINED">;
     const emailArgs = {
@@ -1547,7 +1773,13 @@ async function main() {
     }
     await sleep(450);
   }
-  console.log(`\nDone. Sent ${sent}, failed ${failed}, skipped declined ${counts["DECLINED"] ?? 0}`);
+  if (waitlistPrDeadline) {
+    console.log(
+      `\nDone. Sent ${sent}, failed ${failed}, skipped non-waitlist ${skippedNonWaitlist} (confirmed / incomplete / no-account / declined).`
+    );
+  } else {
+    console.log(`\nDone. Sent ${sent}, failed ${failed}, skipped declined ${counts["DECLINED"] ?? 0}`);
+  }
 }
 
 main().catch((e) => {
