@@ -171,6 +171,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const userId = data.userId as string;
       if (!userId) continue;
       const profile = userMap.get(userId);
+      if (
+        typeof profile?.email === "string" &&
+        DECLINED_EMAILS.has(profile.email.toLowerCase())
+      ) {
+        continue;
+      }
       const gh =
         profile?.github && typeof profile.github === "object"
           ? (profile.github as { login?: string }).login
